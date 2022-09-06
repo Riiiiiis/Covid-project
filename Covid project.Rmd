@@ -1,0 +1,189 @@
+---
+title: "Covid project"
+author: "Kristian Riis Hansen"
+date: '2022-09-06'
+output: html_document
+---
+Libraries:
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+
+
+```
+
+working directory
+```{r}
+setwd("C:/Users/Krist/Desktop/PiB/Variants and mutation rate in SARS-cov2")
+getwd()
+
+```
+
+
+Loading data: 
+```{r}
+
+
+tidy_300K <- readRDS("metadata_snpeff_tidy_300K_downsampled.RDS")
+mutations_tidy_300K <- readRDS("mutations_snpeff_annotated_tidy_300K_downsampled.rds")
+
+```
+
+
+
+#Are virus mutation rates correlated with location/different pangolin lineages?
+#GC content
+
+#Are there single mutations that indicate increased spread in populations. (more virulent or something)
+
+
+```{r}
+
+count(tidy_300K$country)
+?count
+
+table(tidy_300K$country)
+countries_over_1k <- tidy_300K %>% group_by(country) %>% mutate(Count=n())
+
+countries_over_1k
+
+```
+
+
+
+#new dataframe with count over 1k.
+```{r}
+
+
+filterdf <- countries_over_1k %>% filter(Count >1000)
+
+```
+
+
+
+#Shows countries with over 1000 samples
+```{r}
+table(filterdf$country)
+
+View(filterdf)
+
+
+
+small_filt <- filterdf %>% select (country,id, `Virus name`, count_N, count_S) %>%
+  mutate(S_over_N = count_S/count_N)
+
+```
+
+
+
+  
+#Removing NaN rows:
+
+```{r}
+small_filt <- na.omit(small_filt)
+
+small_filt <- small_filt[is.infinite(rowSums(small_filt)),]
+
+
+```
+
+
+
+#There are still rows with "inf"
+
+```{r}
+
+small_filt %>% 
+  ggplot(aes(country, S_over_N)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.15) +
+  theme(axis.text.x = element_text(angle = 45))
+
+
+?geom_boxplot()
+
+
+small_filt %>% 
+  ggplot(aes(country, S_over_N)) + 
+  geom_boxplot() + 
+  geom_jitter(width = 0.2) + 
+  theme(axis.text.x = element_text(angle = 45))
+
+```
+
+
+
+Mutation dataset with only position > 20000:
+
+```{r}
+
+
+Above_20k_position <- mutations_tidy_300K %>% filter(position>20000)
+
+unique(Above_20k_position$gene)
+#still 19 genes showing in the last 10k positions.
+
+```
+
+
+
+
+
+A plot looking at a section or all of the mutation positions --> with counts of these point mutations as Y.
+
+
+
+
+#Does not really work with histogram because of bins etc.
+```{r}
+
+mutations_tidy_300K %>%
+  ggplot() + 
+  geom_histogram(aes(position), binwidth = 1, fill = mutations_tidy_300K$gene)
+  
+
+  
+ggplot(Above_20k_position, aes(x=position), fill = gene) +
+         geom_histogram(binwidth = 1)
+
+
+```
+
+
+Creating same plot but with geom_point, creating a coloumn for count.
+```{r}
+
+
+
+Above_20k_position <- Above_20k_position %>% group_by(position) %>% 
+  mutate(count = n())
+
+
+
+Above_20k_position %>% group_by(position) %>% 
+ggplot(Above_20k_position, mapping = aes(position, count)) + 
+  geom_point()
+
+Above_20k_position %>% group_by(position) %>% 
+ggplot() + 
+  geom_point(Above_20k_position, aes(position, count))
+
+?geom_point
+
+
+
+
+
+Above_20k_position %>% group_by(position,count) %>% 
+ggplot(Above_20k_position, aes(position, count)) + 
+  geom_point()
+
+
+
+Above_20k_position %>% group_by(count,position)
+
+```
+
+
+
