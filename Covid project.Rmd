@@ -161,27 +161,12 @@ Above_20k_position <- Above_20k_position %>% group_by(position) %>%
 
 
 
-Above_20k_position %>% group_by(position) %>% 
-ggplot(Above_20k_position, mapping = aes(position, count)) + 
-  geom_point()
-
-Above_20k_position %>% group_by(position) %>% 
-ggplot() + 
-  geom_point(Above_20k_position, aes(position, count))
-
-?geom_point
-
-
-
-
-
-Above_20k_position %>% group_by(position,count) %>% 
-ggplot(Above_20k_position, aes(position, count)) + 
-  geom_point()
 
 
 
 Above_20k_position %>% group_by(count,position)
+
+  ggplot(Above_20k_position, aes(x=position, y=count)) + geom_point()
 
 ```
 
