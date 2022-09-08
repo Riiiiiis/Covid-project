@@ -166,9 +166,43 @@ Above_20k_position <- Above_20k_position %>% group_by(position) %>%
 
 Above_20k_position %>% group_by(count,position)
 
-  ggplot(Above_20k_position, aes(x=position, y=count)) + geom_point()
+  ggplot(Above_20k_position, aes(x=position, y=count, colour = gene)) + geom_point()
 
 ```
 
+Filter for only spike gene:
+```{r}
 
+
+Spike_gene <- filter(Above_20k_position, gene == "S")
+
+ggplot(Spike_gene, aes(x=position, y=count)) + geom_point()
+
+
+```
+
+Further removing synonymous variants:
+```{r}
+unique(Spike_gene$effect)
+
+Spike_gene_noSyn <- filter(Spike_gene, effect != "synonymous_variant")
+
+
+#Filtering for only high and modifier impact
+unique(Spike_gene_noSyn$impact)
+
+Spike_gene_noSyn <- filter(Spike_gene_noSyn, impact == "HIGH"|impact == "MODIFIER")
+
+
+
+
+```
+Plotting the Spike_gene_filtered
+
+```{r}
+
+ggplot(Spike_gene_noSyn, aes(x=position, y=count)) + geom_point()
+
+
+```
 
