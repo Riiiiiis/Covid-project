@@ -206,3 +206,28 @@ ggplot(Spike_gene_noSyn, aes(x=position, y=count)) + geom_point()
 
 ```
 
+Merging gene coloumn from tidy_300k to mutation dataset:
+
+
+we want to detect the selective sweep
+we found a method for that in one of the articles - so we count the mutations for each positions and we got that around position 22.500 there are significantly more datapoints so we want to analyse that specific region and check the certain gene which might be responsible for the sweep.
+
+```{r}
+left <- tidy_300K
+
+right <- mutations_tidy_300K %>% select(1,5)
+
+merged_df <- merge(left, right)
+
+```
+
+```{r}
+left_join(left,right, by =c("id"="id", "position"="position"))
+
+```
+
+
+
+
+
+
