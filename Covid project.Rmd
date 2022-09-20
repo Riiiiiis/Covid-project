@@ -176,6 +176,11 @@ Filter for only spike gene:
 
 Spike_gene <- filter(Above_20k_position, gene == "S")
 
+Spike_gene$count[1]
+
+
+table(Spike_gene$position)
+
 ggplot(Spike_gene, aes(x=position, y=count)) + geom_point()
 
 
@@ -229,5 +234,176 @@ left_join(left,right, by =c("id"="id", "position"="position"))
 
 
 
+We want to merge the datasets so we have dates, country, GC-content.
 
+
+
+```{r}
+
+
+test_mutation_df <- mutations_tidy_300K[,]
+  
+test_tidy_df <- (tidy_300K[,c(1,10,13,31)])
+
+test_mutation_df <- test_mutation_df %>% group_by(id)
+
+
+test_merged_df <- left_join(test_tidy_df, test_mutation_df, by =c("id"="id"))
+
+
+test_merged_df <- test_merged_df %>% group_by(position) %>% 
+  mutate(count = n())
+
+
+```
+
+
+
+
+We now look at a specific country and gene and graph some things.
+
+```{r}
+
+dk_merged <- filter(test_merged_df, country == "Denmark")
+
+
+fra_merged <- filter(test_merged_df, country == "France")
+
+```
+
+Converting date column into numeric. Works for denmark because it has days included. but the ones in france that already have month only, will get NA.
+
+```{r}
+
+Date = format(as.Date(dk_merged$`Collection date`), "%Y - %m")
+
+
+Date = format(as.Date(fra_merged$`Collection date`), "%Y-%m")
+
+
+#Trying using substring
+fra_merged <- mutate(fra_merged, Date = format(substring(fra_merged$`Collection date`,0,7)))
+#Works like a charm.
+
+dk_merged <- dk_merged %>% mutate(Date = Date)
+
+
+```
+
+
+
+
+Looking at GC-content over time in Denmark.
+
+```{r}
+
+ggplot(data=dk_merged, aes(x=Date, y=dk_merged$"GC-Content")) + 
+         geom_boxplot() +
+        theme(axis.text.x=element_text(angle=90)) + ylab("GC content")
+      
+
+
+
+```
+GC-content over time in France.
+
+Because france has samples that are labeled on only the years, we will filter these out.
+
+Using grepl to remove the "years only" rows.
+```{r}
+
+remove <- c("2020,2021,2022")
+
+fra_merged <- fra_merged %>% grepl(remove, fra_merged$Date)
+
+
+
+
+
+
+```
+
+
+Plotting GC content for france over time.
+```{r}
+
+ggplot(data=fra_merged, aes(x=Date, y=fra_merged$"GC-Content")) + 
+         geom_boxplot() +
+        theme(axis.text.x=element_text(angle=90)) + ylab("GC content")
+      
+
+
+
+```
+
+Filter danish dataset for only one year and spike gene to see mutation positions.
+
+
+```{r}
+
+dk_2020 <- dk_merged %>% filter(str_detect(Date, "^2020"))
+
+
+
+
+dk_2020 %>% group_by(position) %>%
+  mutate(count = n()) %>%
+  filter(gene == "S") %>%
+  ggplot(dk_2020, mapping = aes(x=position, y=count)) + geom_point() +
+  ggtitle("Spike gene mutations during 2020 in Denmark")
+
+
+
+```
+
+Same for france:
+
+```{r}
+
+fra_merged %>% filter(str_detect(Date,"^2020")) %>% 
+  group_by(position) %>% 
+  mutate(count = n()) %>% 
+  filter(gene == "S") %>% 
+  ggplot(fra_merged, mapping = aes(x=position, y=count)) + geom_point() + 
+  ggtitle("Spike gene mutations during 2020 in France")
+
+
+
+```
+
+
+```{r}
+
+unique(tidy_300K$pangolin_lineage)
+
+
+```
+
+
+
+Mutations over time for the "5 main lineages"
+
+
+```{r}
+
+
+
+tidy_300K_fra <- mutate(tidy_300K, Date = format(substring(tidy_300K$`Collection date`,0,7)))
+
+tidy_300K_fra <- tidy_300K_fra %>% mutate(mutations = (count_N + count_S))
+
+
+
+interesting_lineages <- c("B.1.1.7", "P.1", "B.1","B.1.351")
+
+tidy_300K_fra %>% 
+  filter(pangolin_lineage == interesting_lineages) %>%
+  group_by(id, mutations, Date) %>%
+  ggplot(tidy_300K_fra, mapping = aes(x=Date,y=mutations, color=pangolin_lineage)) +
+  geom_point()
+  
+
+
+
+```
 
