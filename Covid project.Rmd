@@ -9,7 +9,7 @@ Libraries:
 library(dplyr)
 library(tidyverse)
 library(ggplot2)
-
+library(lubridate)
 
 ```
 
@@ -114,102 +114,10 @@ small_filt %>%
 
 
 
-Mutation dataset with only position > 20000:
-
-```{r}
-
-
-Above_20k_position <- mutations_tidy_300K %>% filter(position>20000)
-
-unique(Above_20k_position$gene)
-#still 19 genes showing in the last 10k positions.
-
-```
 
 
 
 
-
-A plot looking at a section or all of the mutation positions --> with counts of these point mutations as Y.
-
-
-
-
-#Does not really work with histogram because of bins etc.
-```{r}
-
-mutations_tidy_300K %>%
-  ggplot() + 
-  geom_histogram(aes(position), binwidth = 1, fill = mutations_tidy_300K$gene)
-  
-
-  
-ggplot(Above_20k_position, aes(x=position), fill = gene) +
-         geom_histogram(binwidth = 1)
-
-
-```
-
-
-Creating same plot but with geom_point, creating a coloumn for count.
-```{r}
-
-
-
-Above_20k_position <- Above_20k_position %>% group_by(position) %>% 
-  mutate(count = n())
-
-
-
-
-
-
-Above_20k_position %>% group_by(count,position)
-
-  ggplot(Above_20k_position, aes(x=position, y=count, colour = gene)) + geom_point()
-
-```
-
-Filter for only spike gene:
-```{r}
-
-
-Spike_gene <- filter(Above_20k_position, gene == "S")
-
-Spike_gene$count[1]
-
-
-table(Spike_gene$position)
-
-ggplot(Spike_gene, aes(x=position, y=count)) + geom_point()
-
-
-```
-
-Further removing synonymous variants:
-```{r}
-unique(Spike_gene$effect)
-
-Spike_gene_noSyn <- filter(Spike_gene, effect != "synonymous_variant")
-
-
-#Filtering for only high and modifier impact
-unique(Spike_gene_noSyn$impact)
-
-Spike_gene_noSyn <- filter(Spike_gene_noSyn, impact == "HIGH"|impact == "MODIFIER")
-
-
-
-
-```
-Plotting the Spike_gene_filtered
-
-```{r}
-
-ggplot(Spike_gene_noSyn, aes(x=position, y=count)) + geom_point()
-
-
-```
 
 Merging gene coloumn from tidy_300k to mutation dataset:
 
@@ -390,6 +298,21 @@ Mutations over time for the "5 main lineages"
 
 tidy_300K_test <- mutate(tidy_300K, Date = format(substring(tidy_300K$`Collection date`,0,7)))
 
+
+
+#Here we use lubridate to make the collection date column into an actual DATE.
+tidy_300K_test$`Collection date` <- ymd(tidy_300K_test$`Collection date`) 
+
+  
+
+
+
+unique(tidy_300K_test$Variant)
+
+
+
+  
+
 tidy_300K_test <- tidy_300K_fra %>% mutate(mutations = (count_N + count_S))
 
 interesting_lineages <- c("B.1.1.7", "P.1", "B.1","B.1.351")
@@ -398,12 +321,16 @@ tidy_300K_test <- tidy_300K_test %>% mutate(pango_lineage = ifelse(pangolin_line
 
 
 
+
+
 tidy_300K_test %>%
-  filter(nchar(Date) > 4) %>%
   group_by(id, mutations) %>%
-  ggplot(tidy_300K_test, mapping = aes(x=Date,y=mutations, color=pango_lineage)) +
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC"
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=mutations, color=Variant)) +
   geom_point() +
   theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 3),
+         legend.text = element_text(size = 3))+
   ggtitle("Mutations over time for the common lineages")
 
 
@@ -423,36 +350,19 @@ GC content of the 4-5 lineages of interest over time.
 
 tidy_300K_test %>%
   group_by(id) %>%
-  ggplot(tidy_300K_test, mapping = aes(x=Date,y=`GC-Content`, color=pango_lineage)) +
-  geom_point(position = "jitter") +
-  geom_smooth(aes(color=pango_lineage), method = "lm", se = F) +
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC" 
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=`GC-Content`, color=Variant)) +
+  geom_point(size = 2) +
+  geom_smooth(aes(color=Variant), method = "lm", se = F) +
   theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 4),
+         legend.text = element_text(size = 4)) +
   ggtitle("GC-Content over time for the common lineages") +
   NULL
 
 
 
 
-```
-
-
-Trying to get the smooth to work:
-```{r}
-
-
-
-
-plot <- tidy_300K_test %>%
-  filter(pangolin_lineage == interesting_lineages) %>%
-  group_by(id) %>%
-  ggplot(tidy_300K_test, mapping = aes(x=Date,y=`GC-Content`, color=pangolin_lineage)) +
-  geom_point() +
-  theme(axis.text.x=element_text(angle=90)) +
-  ggtitle("GC-Content over time for the common lineages") +
-  NULL
-
-
-plot + geom_smooth(method = "lm")
 ```
 
 
@@ -461,13 +371,16 @@ Looking at France only:
 ```{r}
 
 tidy_300K_test %>% filter(country == "France") %>% 
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC" 
   group_by(id) %>%
-  ggplot(tidy_300K_test, mapping = aes(x=Date,y=`GC-Content`, color=pango_lineage)) +
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=`GC-Content`, color=Variant)) +
   geom_point() +
   geom_boxplot() +
   theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 3),
+         legend.text = element_text(size = 3))+
   ggtitle("GC-Content over time for the common lineages in France")+
-  facet_wrap( ~ pango_lineage)
+  facet_wrap( ~ Variant)
   
 
 
@@ -492,6 +405,97 @@ tidy_300K_test %>% filter(country == "France") %>%
   ggtitle("DnDs ratio for the common lineages in France")+
   facet_wrap( ~ pango_lineage)
   
+
+
+
+```
+
+
+We want to find out whether the mutations are often G/C or otherwise. To do so we look at the reference genome: Wuhan1 and by using a selfwritten function, we use the mutation dataset to see where aswell as which mutation. So 1. we can see which mutations are most prone and also in which regions. We do this because we hypothesize that there are more mutations in the region for immunerecognision associated genes.
+
+
+
+
+```{r}
+
+x <- read_tsv("NC_045512.2.fasta")
+reference_genome <- strsplit(x$`>NC_045512.2 Severe acute respiratory syndrome coronavirus 2 isolate Wuhan-Hu-1, complete genome`[1], "") %>% unlist()
+rm(x)
+table(reference_genome) %>% knitr::kable()
+ 
+
+ref_genome <- tibble(base = reference_genome) %>% mutate(position=row_number())
+
+
+
+
+#do it with the frequencies of A C G T?
+```
+
+
+
+```{r}
+
+
+
+bases <- c("T","G","C","A")
+
+dk_merged <- test_merged_df %>% filter(country == "Denmark") %>% filter(variant_base == bases)
+
+#now only variant_base = A T C or G
+
+
+#Join the wuhan genome to the dk_merged:
+  
+
+left_dk <- dk_merged
+
+right_dk <- ref_genome 
+
+
+dk_merged_with_wuhan <- left_join(left_dk, right_dk, by = "position")
+
+
+```
+
+
+```{r}
+
+
+
+fahrenheit_to_celsius <- function(temp_F) {
+  temp_C <- (temp_F - 32) * 5 / 9
+  return(temp_C)
+}
+
+
+
+
+fahrenheit_to_celsius(105)
+
+
+```
+
+
+```{r}
+
+
+phdFinder <- function(x){
+  for(i in x){
+    if(x[i]=="A"){
+      res=paste("A")    }
+  mentioned <- grepl("A",x)
+  return(mentioned)
+}
+}
+
+
+
+x <- c("B","A","C")
+
+phdFinder(dk_merged_with_wuhan$base)
+
+
 
 
 
