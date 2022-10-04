@@ -459,44 +459,252 @@ dk_merged_with_wuhan <- left_join(left_dk, right_dk, by = "position")
 ```
 
 
+
 ```{r}
 
+  
+  #Just for removing a column:
+#dk_merged_with_wuhan <- subset(dk_merged_with_wuhan, select = -newCol)
+
+#Adding Variants to the dk_merged_with_wuhan with merged:
+
+right <- tidy_300K %>% select(Variant,id)
+left <- dk_merged_with_wuhan
+
+dk_merged_with_wuhan <- left_join(left,right, by = "id")
+
+dk_merged_with_wuhan$`Collection date` <- ymd(dk_merged_with_wuhan$`Collection date`)
+#Now we go into pyhton and load the "dk_merged_wuhan.csv"
+
+write.csv(dk_merged_with_wuhan,"dk_merged_wuhan.csv")
 
 
-fahrenheit_to_celsius <- function(temp_F) {
-  temp_C <- (temp_F - 32) * 5 / 9
-  return(temp_C)
-}
+dk_wuhan_statcount <- read.csv("dk_wuhan_statcount.csv")
+dk_wuhan_statcount_with_Variant <- read.csv("dk_wuhan_statcount_with_Variant.csv")
+
+```
+
+
+Wrangling dataset with base change counts:
+
+We want to produce a plot showing the occurences of changes for each position. Which variant base is most likely to shift to. We do this to get an understanding and insight into the possibility that different regions of the genome might be under different selective pressures. Coupled with the GC-content.
+```{r}
+
+#Only VOC, not VOI:
+
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% filter(str_detect(Variant, "^VOC"))
+
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% filter(str_detect(Variant, "^VOC"))
+
+#Shortening the VOC variable names:
+unique(dk_wuhan_statcount_with_Variant$Variant)
+
+library(stringr)
+
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% mutate(variant = str_extract(dk_wuhan_statcount_with_Variant$Variant, "[^(]+"))
+#thank fucking god this works.
+
+
+
+dk_wuhan_statcount_with_Variant %>% group_by(position,variant) %>% 
+  ggplot(aes(x=position, y=count, fill = variant_base))+
+  geom_bar(stat="identity")
 
 
 
 
-fahrenheit_to_celsius(105)
+dk_wuhan_statcount_with_Variant %>% group_by(position) %>% 
+  ggplot((aes(x=position, y=count, color=variant_base)))+
+  xlim(22300,24000)+
+  ylim(0,10)+
+  geom_point() +
+  ggtitle("counts of limited mutations for each VOC in range of 22300-24000")+
+  facet_wrap(~ variant)
 
 
 ```
 
 
+Frequency table:
+
 ```{r}
 
 
-phdFinder <- function(x){
-  for(i in x){
-    if(x[i]=="A"){
-      res=paste("A")    }
-  mentioned <- grepl("A",x)
-  return(mentioned)
-}
-}
+dk_wuhan_statcount_with_Variant$Pairs <- paste(dk_wuhan_statcount_with_Variant$base, dk_wuhan_statcount_with_Variant$variant_base)
+
+    
+
+frequencies_with_Variant <- dk_wuhan_statcount_with_Variant %>% group_by(Pairs,variant) %>% summarise(sum(count)/184171,sum(count))
 
 
 
-x <- c("B","A","C")
-
-phdFinder(dk_merged_with_wuhan$base)
-
+sum(frequencies_with_Variant$`sum(count)/184171`)
+frequencies_with_Variant
 
 
+
+
+```
+
+Frequency plots: one for the general tendency and then for some specific regions:
+
+
+```{r}
+
+#Count plot for each change over the whole genome:
+ggplot(frequencies_with_Variant, aes(x=Pairs,y=frequencies_with_Variant$`sum(count)`,color=variant))+
+         geom_point()+
+  theme(axis.text.x=element_text(angle=90)) +
+  ggtitle("Counts of changes over the whole genome")
+
+
+
+```
+
+```{r}
+
+
+#Count plot for each change in the 22500- 24000 region:
+
+
+frequencies_in_range <- dk_wuhan_statcount_with_Variant %>% filter(between(position,22500,24000)) %>% group_by(Pairs,variant) %>% summarise(sum(count)/184171,sum(count))
+
+
+ggplot(frequencies_in_range,aes(x=Pairs,y=frequencies_in_range$`sum(count)`, color=variant))+
+  geom_point()+theme(axis.text.x=element_text(angle=90)) +
+  ylim(0,10)+
+  geom_jitter()+
+  ggtitle("Counts of small changes in range 22500 - 24000 for all VOC")
+  
+
+```
+
+
+
+Short variant names for dk_merged_with_wuhan so we can make a GC graph for all VOCs
+```{r}
+
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% mutate(variant = str_extract(dk_merged_with_wuhan$Variant, "[^(]+"))
+
+dk_merged_with_wuhan %>% filter(variant =)
+ggplot(dk_merged_with_wuhan, aes(x=dk_merged_with_wuhan$`Collection date`,y=dk_merged_with_wuhan$`GC-Content`, color=variant)) +
+  geom_point() +
+  geom_smooth(aes(color=variant), method = "lm", se = F) +
+  ggtitle("GC-content of Variants of concern in Denmark")
+
+
+```
+
+
+
+
+Adding aa_change to statcount aswell:
+```{r}
+
+#Going into python environment and adding the column aswell:
+
+```
+
+
+
+L452R over timeline:
+
+```{r}
+
+
+dk_wuhan_statcount_with_Variant_Collectiondate <- read.csv("dk_wuhan_statcount_with_Variant_and_collection_date.csv")
+
+#adding variant short:
+#Filtering only for VOC:
+dk_wuhan_statcount_with_Variant_Collectiondate <- dk_wuhan_statcount_with_Variant_Collectiondate %>% filter(str_detect(Variant, "^VOC"))
+
+#making variant column
+dk_wuhan_statcount_with_Variant_Collectiondate <- dk_wuhan_statcount_with_Variant_Collectiondate %>% mutate(variant = str_extract(dk_wuhan_statcount_with_Variant_Collectiondate$Variant, "[^(]+"))
+
+#lubridate the date
+dk_wuhan_statcount_with_Variant_Collectiondate$Collection.date <- ymd(dk_wuhan_statcount_with_Variant_Collectiondate$Collection.date)
+
+
+
+dk_wuhan_statcount_with_Variant_Collectiondate %>% filter(aa_change == "L452R") %>%   ggplot(aes(x=Collection.date,y = count, color=variant))+
+  geom_point() +
+  ggtitle("Number of mutations that cause the L452R change")
+
+
+
+
+```
+
+
+Where is the spike gene:
+
+We expect to see 
+
+
+
+
+
+
+```{r}
+
+#NTD
+21563+13
+
+21563+304
+
+#RBD
+21563+319
+21563+541
+
+
+unique(dk_merged_with_wuhan$effect)
+
+syn <- "synonymous_variant"
+
+#dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn"))
+
+test <- dk_merged_with_wuhan %>% group_by(variant, position) %>% summarise(n=n()) %>% mutate(counts = n)
+
+dk_merged_with_wuhan %>% summarise(n=n())
+
+
+dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn")) %>% filter(gene=="S") %>% filter(between(position, 21500,22150)) %>% group_by(variant, position, Type) %>% summarise(n=n()) %>% filter(n <= 5) %>% 
+ggplot()+
+  geom_point(aes(x=position, y=n,color = Type))+
+  facet_wrap(~ variant)+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+
+
+```
+
+
+
+
+
+A plot showing all the positions without a mutation: for all different VOC. they show the same pattern?
+```{r}
+
+
+
+
+```
+
+
+
+
+
+
+test hvordan group by virker: DET GØR DET SÅDAN HER BRO
+```{r}
+
+
+dk_wuhan_statcount_with_Variant_Collectiondate %>% group_by(position,variant,aa_change,base,variant_base) %>% summarise(k=n()) %>% 
+  ggplot((aes(x=position, y=k, color=variant_base)))+
+  xlim(22300,24000)+
+  ylim(0,10)+
+  geom_point() +
+  ggtitle("counts of limited mutations for each VOC in range of 22300-24000")+
+  facet_wrap(~ variant)
 
 
 ```
