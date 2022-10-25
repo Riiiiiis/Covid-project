@@ -881,25 +881,33 @@ all_merged_with_wuhan <- all_merged_with_wuhan %>% mutate(variant = str_extract(
 all_merged_with_wuhan$Pairs <- paste(all_merged_with_wuhan$base, all_merged_with_wuhan$variant_base)
 
 
-
+#THIS IS WRONG
 
 #Contingency table for all countries, all mutations.
 all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% spread(Pairs, n)
 
-
+#THIS IS WRONG
 
 #Contingency table for all countries, only limited mutations (NEW ONES).
-all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n < 10) %>%  spread(Pairs,n)
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n < 5) %>%  spread(Pairs,n)
 #WE OBSERVE VERY LITTLE THAT ARE ONLY FOUND UNDER 5 TIMES, SINCE WEHAVE ALOT MORE DATA, AND THESEMUTATIONS HAVE OCCURED EVERYWHERE IN THIS SAMPLES.
 
 
 
-```
+#NEW PROBLEM: SOLVED
+test <- all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n<= 5)
 
-```{r}
+test
 
-dk_wuhan_statcount_with_Variant %>% filter(count <= 5) %>% filter(between(position,21500,22150))
+#Aggregate unique positions for Pairs and variants.
 
+contingency_table_aggregated <- aggregate(n~ Pairs+variant, data= test,FUN=sum)
+
+contingency_table_aggregated
+#ALso quickly check how many mutations there are on RBD and NTD.
+
+
+contingency_table_aggregated %>% spread(Pairs,n)
 
 ```
 
@@ -907,9 +915,8 @@ dk_wuhan_statcount_with_Variant %>% filter(count <= 5) %>% filter(between(positi
 Comparing the contingency table with the whole genome for limited counts of mutations:
 ```{r}
 
-all_merged_with_wuhan %>% group_by(variant, Pairs) %>% filter(between(position, 21500,22150)) %>% summarise(n=n()) %>% filter(n < 5) %>% spread(key = "Pairs", value= n)
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n <= 5) %>% aggregate(n ~ Pairs + variant,FUN = sum) %>% spread(Pairs,n)
 
-?spread()
 
 ```
 
