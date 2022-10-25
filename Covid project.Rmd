@@ -10,6 +10,7 @@ library(dplyr)
 library(tidyverse)
 library(ggplot2)
 library(lubridate)
+library(knitr)
 
 ```
 
@@ -441,9 +442,7 @@ ref_genome <- tibble(base = reference_genome) %>% mutate(position=row_number())
 bases <- c("T","G","C","A")
 
 dk_merged <- test_merged_df %>% filter(country == "Denmark") %>% filter(variant_base == bases)
-
 #now only variant_base = A T C or G
-
 
 #Join the wuhan genome to the dk_merged:
   
@@ -476,11 +475,19 @@ dk_merged_with_wuhan <- left_join(left,right, by = "id")
 dk_merged_with_wuhan$`Collection date` <- ymd(dk_merged_with_wuhan$`Collection date`)
 #Now we go into pyhton and load the "dk_merged_wuhan.csv"
 
+
+#We filter so variant base cannot be base either.
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% filter(variant_base != base)
+
+
+
 write.csv(dk_merged_with_wuhan,"dk_merged_wuhan.csv")
 
 
 dk_wuhan_statcount <- read.csv("dk_wuhan_statcount.csv")
 dk_wuhan_statcount_with_Variant <- read.csv("dk_wuhan_statcount_with_Variant.csv")
+
+
 
 ```
 
@@ -528,19 +535,21 @@ dk_wuhan_statcount_with_Variant %>% group_by(position) %>%
 Frequency table:
 
 ```{r}
-
+#For removing changes that are the same: A--> A. etc.
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% filter(variant_base != base)
 
 dk_wuhan_statcount_with_Variant$Pairs <- paste(dk_wuhan_statcount_with_Variant$base, dk_wuhan_statcount_with_Variant$variant_base)
 
+unique(dk_wuhan_statcount_with_Variant$Pairs)
     
 
-frequencies_with_Variant <- dk_wuhan_statcount_with_Variant %>% group_by(Pairs,variant) %>% summarise(sum(count)/184171,sum(count))
+frequencies_with_Variant <- dk_wuhan_statcount_with_Variant %>% group_by(Pairs,variant) %>% summarise(Percentage=(sum(count)/sum(dk_wuhan_statcount_with_Variant$count)),sum(count))
+
+sum(dk_wuhan_statcount_with_Variant$count)
 
 
-
-sum(frequencies_with_Variant$`sum(count)/184171`)
-frequencies_with_Variant
-
+sum(frequencies_with_Variant$Percentage)
+sum(frequencies_with_Variant$`sum(count)`)
 
 
 
@@ -552,6 +561,10 @@ Frequency plots: one for the general tendency and then for some specific regions
 ```{r}
 
 #Count plot for each change over the whole genome:
+
+sum(frequencies_with_Variant$`sum(count)`)
+#171533
+
 ggplot(frequencies_with_Variant, aes(x=Pairs,y=frequencies_with_Variant$`sum(count)`,color=variant))+
          geom_point()+
   theme(axis.text.x=element_text(angle=90)) +
@@ -565,16 +578,16 @@ ggplot(frequencies_with_Variant, aes(x=Pairs,y=frequencies_with_Variant$`sum(cou
 
 
 #Count plot for each change in the 22500- 24000 region:
+#there are 6256 counted positions for the range(21500,22150)
 
-
-frequencies_in_range <- dk_wuhan_statcount_with_Variant %>% filter(between(position,22500,24000)) %>% group_by(Pairs,variant) %>% summarise(sum(count)/184171,sum(count))
+frequencies_in_range <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(Percentage=(sum(count)/sum(dk_wuhan_statcount_with_Variant$count)),sum(count))
 
 
 ggplot(frequencies_in_range,aes(x=Pairs,y=frequencies_in_range$`sum(count)`, color=variant))+
   geom_point()+theme(axis.text.x=element_text(angle=90)) +
   ylim(0,10)+
   geom_jitter()+
-  ggtitle("Counts of small changes in range 22500 - 24000 for all VOC")
+  ggtitle("Counts of small changes in range 21500 - 22150 for all VOC")
   
 
 ```
@@ -586,8 +599,8 @@ Short variant names for dk_merged_with_wuhan so we can make a GC graph for all V
 
 dk_merged_with_wuhan <- dk_merged_with_wuhan %>% mutate(variant = str_extract(dk_merged_with_wuhan$Variant, "[^(]+"))
 
-dk_merged_with_wuhan %>% filter(variant =)
-ggplot(dk_merged_with_wuhan, aes(x=dk_merged_with_wuhan$`Collection date`,y=dk_merged_with_wuhan$`GC-Content`, color=variant)) +
+dk_merged_with_wuhan %>%
+ggplot(dk_merged_with_wuhan, mapping= aes(x=dk_merged_with_wuhan$`Collection date`,y=dk_merged_with_wuhan$`GC-Content`, color=variant)) +
   geom_point() +
   geom_smooth(aes(color=variant), method = "lm", se = F) +
   ggtitle("GC-content of Variants of concern in Denmark")
@@ -675,8 +688,48 @@ ggplot()+
     ggtitle("Low frequency mutations on the NTD & RBD regions")
 
 
+
+
+
+
 ```
 
+Maybe a plot showing the above, but with all the overlaps, all the low frequency mutations that are present in all the variants.
+
+
+```{r}
+
+
+#HAVENT RERUN THIS YET WITH fixed filter.
+test <- dk_merged_with_wuhan %>% filter(gene=="S") %>% filter(between(position,21500,22150)) %>% group_by(position,variant) %>% summarise(n=n())
+  
+test
+write.csv(test,"forlooped test.csv")
+
+Mutation_overlap <- read.csv("mutation_overlap.csv")
+
+
+
+dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn")) %>% filter(gene=="S") %>% filter(between(position, 21500,22150)) %>% group_by(variant, position, Type) %>% summarise(n=n()) %>% filter(n <= 5)
+
+#
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5)
+
+
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5) %>% 
+  ggplot(aes(x=position, y=n,color = variant))+
+  geom_point()+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+
+par(mfrow = c(1,2))
+
+
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5) %>% 
+  ggplot(aes(x=position, y=n,color = mutation_overlap))+
+  geom_point()+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+
+```
 
 
 
@@ -708,4 +761,157 @@ dk_wuhan_statcount_with_Variant_Collectiondate %>% group_by(position,variant,aa_
 
 
 ```
+
+
+
+
+Contingency tables:
+
+We hypothesize that variants might have different selective pressures --> especially on the region of the Spike gene, that is associated with human immunoresponse. Therefore we look at the number of mutations for all available variants in denmark on this position of the genome. They might differ in which basepair mutations are happening (cg depletion at different levels?). However we have to remember that there are alot less counts for some of the variants.
+
+```{r}
+
+#Contingency tables: COunt and percentage
+
+df_count_pairs_each_VOC <- dk_wuhan_statcount_with_Variant %>% filter(between(position, 21500,22150)) %>% group_by(Pairs,variant) %>% 
+summarise(n=(sum(count)))
+
+contingency_count <- df_count_pairs_each_VOC %>% spread(Pairs,n)
+
+
+#If we remove the spread argument, we can look at the df: df_count_pairs_each_VOC$n and sum it. 6256 it will be.
+sum(df_count_pairs_each_VOC$n)
+
+
+
+df_percentage_pairs_each_VOC <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% 
+summarise(n=(sum(count)/sum(df_count_pairs_each_VOC$n)))
+
+#n sums to 1. perfect
+
+
+contingency_percentage <- df_percentage_pairs_each_VOC %>% spread(Pairs,n)
+
+#turn NA's into 0.
+
+test <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(n=(sum(count)/sum(df_count_pairs_each_VOC$n))) %>% spread(Pairs,n)
+
+test2 <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(n=(sum(count))) %>% spread(Pairs,n)
+test2
+
+
+
+
+
+
+test[is.na(test)]=0
+test2[is.na(test2)]=0
+
+
+#Sum of all the percentages. 
+sum(rowSums(test[,-1]))
+
+sum(rowSums(test2[,-1]))
+
+#Sum of all the percentages without beta:
+sum(rowSums(test[,-(c(1,2))]))
+#0,999, which means that beta doesnt really contribute to anything.
+
+#Lets remove beta: 
+test <- test[-2,]
+
+
+#The percentages in our contingency table. are equivalent to the number of mutations in the total filtered data. THerefore all the numbers added together sum to 1. I think this is what we want.
+
+
+```
+
+
+Further doing statistics on the contingency tables:
+With chi squared test: Check if column variables are independent of row variables.
+```{r}
+AC <- chisq.test(test$variant,test$`A C`)
+
+
+#So counts and percentage contingency tables give same results.
+```
+Since our p-value is not of significance, we know that A --> C mutations are not independent between Variants.
+
+
+
+
+
+Contingency tables with only filtered for 5 or less counts, for only DK and for all of the world.
+```{r}
+dk_merged_with_wuhan$Pairs <- paste(dk_merged_with_wuhan$base, dk_merged_with_wuhan$variant_base)
+
+
+#Nearly no counts
+dk_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n <= 5) %>% spread(Pairs,n)
+
+#Not that many samples_: Maybe do it for the whole of world and see.
+
+all_merged <- test_merged_df %>% filter(variant_base == bases)
+#now only variant_base = A T C or G
+
+#Join the wuhan genome to the all_merged:
+left <- all_merged
+
+right <- ref_genome 
+
+all_merged_with_wuhan <- left_join(left, right, by = "position")
+
+#Adding variant:
+right <- tidy_300K %>% select(Variant,id)
+left <- all_merged_with_wuhan
+
+all_merged_with_wuhan <- left_join(left,right, by = "id")
+
+#Filtering for only VOC's
+all_merged_with_wuhan <- all_merged_with_wuhan %>% filter(str_detect(Variant, "^VOC"))
+
+#Shortening the VOC variable names and filtering for ref_base only A|T|C|G
+
+library(stringr)
+
+all_merged_with_wuhan <- all_merged_with_wuhan %>% mutate(variant = str_extract(all_merged_with_wuhan$Variant, "[^(]+")) %>% filter(ref_base == c("A","C","G","T"))
+
+
+
+all_merged_with_wuhan$Pairs <- paste(all_merged_with_wuhan$base, all_merged_with_wuhan$variant_base)
+
+
+
+
+#Contingency table for all countries, all mutations.
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% spread(Pairs, n)
+
+
+
+#Contingency table for all countries, only limited mutations (NEW ONES).
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n < 10) %>%  spread(Pairs,n)
+#WE OBSERVE VERY LITTLE THAT ARE ONLY FOUND UNDER 5 TIMES, SINCE WEHAVE ALOT MORE DATA, AND THESEMUTATIONS HAVE OCCURED EVERYWHERE IN THIS SAMPLES.
+
+
+
+```
+
+```{r}
+
+dk_wuhan_statcount_with_Variant %>% filter(count <= 5) %>% filter(between(position,21500,22150))
+
+
+```
+
+
+Comparing the contingency table with the whole genome for limited counts of mutations:
+```{r}
+
+all_merged_with_wuhan %>% group_by(variant, Pairs) %>% filter(between(position, 21500,22150)) %>% summarise(n=n()) %>% filter(n < 5) %>% spread(key = "Pairs", value= n)
+
+?spread()
+
+```
+
+
 
