@@ -11,6 +11,7 @@ library(tidyverse)
 library(ggplot2)
 library(lubridate)
 library(knitr)
+library(stringr)
 
 ```
 
@@ -45,42 +46,6 @@ ref_genome <- tibble(base = reference_genome) %>% mutate(position=row_number())
 
 
 
-#Are virus mutation rates correlated with location/different pangolin lineages?
-#GC content
-
-#Are there single mutations that indicate increased spread in populations. (more virulent or something)
-
-
-
-
-#Shows countries with over 1000 samples
-```{r}
-table(filterdf$country)
-
-View(filterdf)
-
-
-
-small_filt <- filterdf %>% select (country,id, `Virus name`, count_N, count_S) %>%
-  mutate(S_over_N = count_S/count_N)
-
-```
-
-
-
-  
-#Removing NaN rows:
-
-```{r}
-small_filt <- na.omit(small_filt)
-
-small_filt <- small_filt[is.infinite(rowSums(small_filt)),]
-
-
-```
-
-
-
 Merging gene coloumn from tidy_300k to mutation dataset:
 
 
@@ -107,14 +72,13 @@ test_merged_df <- left_join(tidy_300K[,c(1,10,13,23,31)], mutations_tidy_300K, b
 #right <- ref_genome 
 
 all_merged_with_wuhan <- left_join(test_merged_df, ref_genome, by = "position")
-rm(test_merged_df)
+
 
 #Filtering for only VOC's
 all_merged_with_wuhan <- all_merged_with_wuhan %>% filter(str_detect(Variant, "^VOC"))
 
 #Shortening the VOC variable names and filtering for ref_base only A|T|C|G
 
-library(stringr)
 
 all_merged_with_wuhan <- all_merged_with_wuhan %>% mutate(variant = str_extract(all_merged_with_wuhan$Variant, "[^(]+")) %>% filter(ref_base == c("A","C","G","T"))
 
@@ -126,6 +90,9 @@ all_merged_with_wuhan$Pairs <- paste(all_merged_with_wuhan$base, all_merged_with
 
 #We reformat the Collection date, so it becomes an actual date.
 all_merged_with_wuhan$`Collection date` <- ymd(all_merged_with_wuhan$`Collection date`)
+
+
+unique(all_merged_with_wuhan$variant_base)
 
 #We remove all variant bases that are not only one nucleotide.
 bases=c("A","T","C","G")
@@ -153,15 +120,20 @@ We are interested in finding out, whether mutations have accumulated at certain 
 
 ```{r}
 
-all_merged_with_wuhan %>% group_by(position) %>%  
-  mutate(count=n()) %>%
-  ggplot(data=all_merged_with_wuhan, mapping=aes(x=position,y=all_merged_with_wuhan$count)) +
-  geom_point() +
+all_merged_with_wuhan %>% group_by(position) %>%
+  ggplot()+
+  geom_histogram(mapping= aes(x=position,fill=variant))+
   ggtitle("Mutations over the whole genome")
 
-all_mer
 
-all_merged_with_wuhan %>% group_by(position,gene) %>% mutate(count=n())
+
+#With filtered counts (limited)
+#all_merged_with_wuhan %>% group_by(position) %>% mutate(count=n()) %>% filter(count <=5) %>% 
+#  ggplot()+
+#  geom_histogram(mapping=aes(x=position))
+
+
+#It looks like its more stable over the whole genome then.
 ```
 
 Mutations over time for the "5 main lineages"
@@ -201,14 +173,15 @@ tidy_300K_test %>%
 
 all_merged_with_wuhan %>% ggplot(all_merged_with_wuhan,mapping=aes(x=`Collection date`,y=`GC-Content`)) +
   geom_point(aes(color=variant))+
-  geom_smooth(aes(color=variant),method = "lm", se=F)
+  geom_smooth(aes(color=variant),method = "lm", se=F) +
+  ggtitle("GC-Content over time for the Variants of Concern")
 ```
 
 
 
 dn/ds for each lineage
 
-
+THIS IS NOT THAT COOL OR IMPORTANT.
 ```{r}
 
 tidy_300K <- tidy_300K %>% mutate(DnDs = (count_N/count_S))
@@ -224,7 +197,6 @@ tidy_300K %>%
   ggtitle("DnDs ratio")+
   facet_wrap( ~ variant)
   
-
 
 
 ```
@@ -317,6 +289,7 @@ all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(var
 
 
 L452R over timeline:
+NOT IMPORTANT
 
 ```{r}
 
@@ -416,21 +389,20 @@ Contingency tables with only filtered for 5 or less counts
 ```{r}
 
 #NEW PROBLEM: SOLVED
-test <- all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n<= 5)
+contingency_table_count <- all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n<= 5)
 
-test
+
 
 #Aggregate unique positions for Pairs and variants.
 
-contingency_table_aggregated <- aggregate(n~ Pairs+variant, data= test,FUN=sum)
+contingency_table_count <- aggregate(n~ Pairs+variant, data= contingency_table_count,FUN=sum)
 
-contingency_table_aggregated
 #ALso quickly check how many mutations there are on RBD and NTD.
 
-contingency_table_aggregated <- contingency_table_aggregated %>% spread(Pairs,n)
+contingency_table_count <- contingency_table_count %>% spread(Pairs,n)
 
 
-contingency_table_aggregated[is.na(contingency_table_aggregated)]=0
+contingency_table_count[is.na(contingency_table_count)]=0
 ```
 
 
@@ -441,6 +413,8 @@ all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(var
 
 #This still has NA's though.
 
+
+#Make the chisq for counts table.
 ```
 Trying to create contingency tables that contain percentages instead, still aggregated counts.
 ```{r}
@@ -456,6 +430,9 @@ prop_contingency_table[is.na(prop_contingency_table)]=0
 (rowSums(prop_contingency_table[,-1]))
 #All the rows sum to 1. Which is great.
 
+prop_contingency_table
+
+
 
 ```
 
@@ -466,13 +443,14 @@ Doing stats on prop_contingency table
 ```{r}
 df_test <- data.frame(AC= numeric(0),AG=numeric(0),AT=numeric(0),CA=numeric(0),CG=numeric(0),CT=numeric(0), GA=numeric(0), GC=numeric(0), GT=numeric(0), TA=numeric(0), TC=numeric(0),TG=numeric(0))
 
-prop_contingency_table
 
-AC <- chisq.test(prop_contingency_table$variant,prop_contingency_table$`A C`)
+contingency_table_count
+
+AC <- chisq.test(contingency_table_count$variant,contingency_table_count$`A C`)
 
 
 
-AG <- chisq.test(prop_contingency_table$variant,prop_contingency_table$`A G`)
+AG <- chisq.test(contingency_table_count$variant,contingency_table_count$`A G`,simulate.p.value = TRUE)
 
 AT <- chisq.test(prop_contingency_table$variant,prop_contingency_table$`A T`)
 
@@ -521,31 +499,62 @@ chisq.test(table(prop_contingency_table$variant,prop_contingency_table$`G C`))
 
 
 
+
+#THIS IS WHAT WE WANT
+contingency_table_count
+chisq.test(contingency_table_count[,-1])
+
+
+#We get a significant p-value, which means that we reject the H0: that there is no association between two or more categorical variables. Therefore there is an association between the variables (Some biological force perhaps)
+
+library(chisq.posthoc.test)
+
+
+chisq.posthoc.test(contingency_table_count[,-1],method= "bonferroni")
+
+#Read up on how posthoc.test results should be understood.
+
+
+
+#
 ```
+
 
 ```{r}
 
-Alpha_Beta <- prop_contingency_table[1:2,1:4]
-Alpha_Beta
-Alpha_Beta$variant <- as.factor(Alpha_Beta$variant)
+#Actual counts.
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n <= 5) %>% aggregate(n ~ Pairs + variant,FUN = sum) %>% 
+  ggplot()+
+    geom_col(aes(x=Pairs,y=n,fill=variant))
+
+#Proportionised for each variant, so it sums to 1 for each.
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n <= 5) %>% aggregate(n ~ Pairs + variant,FUN = sum) %>% group_by(variant) %>% mutate(prop=n/sum(n)) %>% 
+  ggplot()+
+    geom_col(aes(x=variant,y=prop,fill=Pairs))
+
+#Shift around response
+
+```
 
 
-chisq.test(Alpha_Beta$`A C`)
-chisq.test(Alpha_Beta$`A G`)
-chisq.test(Alpha_Beta$`A T`)
-
-chisq.test(Alpha_Beta$`A C`)
-
-prop_contingency_table
-
-library(MASS)
-tbl=table(prop_contingency_table$variant,prop_contingency_table$`A C`)
-tbl
 
 
-chisq.test(Alpha_Beta$variant,Alpha_Beta$`A C`)
-chisq.test(prop_contingency_table$variant,prop_contingency_table$`A C`)
 
+
+
+
+
+```{r}
+
+
+all_merged_with_wuhan %>% group_by(id) %>% mutate(mutations=n()) %>% 
+  ggplot(mapping=aes(x=`Collection date`,y=mutations,color=variant))+
+  geom_point()+
+  geom_smooth(aes(color=variant),method="lm",se=F) +
+  ylim(0,20)
+
+
+  
 
 ```
 
