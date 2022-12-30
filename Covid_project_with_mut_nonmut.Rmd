@@ -1,0 +1,976 @@
+---
+title: "Covid project"
+author: "Bernadett Molnar"
+date: '2022-09-22'
+output: html_document
+---
+Libraries:
+```{r}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+working directory
+```{r}
+setwd("C:/Users/Berni/Desktop/PiB_2022/Covid_data")
+getwd()
+```
+
+
+Loading data: 
+```{r}
+tidy_300K <- readRDS("metadata_snpeff_tidy_300K_downsampled.RDS")
+mutations_tidy_300K <- readRDS("mutations_snpeff_annotated_tidy_300K_downsampled.rds")
+```
+
+
+#Are virus mutation rates correlated with location/different pangolin lineages?
+#GC content
+
+#Are there single mutations that indicate increased spread in populations. (more virulent or something)
+
+```{r}
+count(tidy_300K$country)
+?count
+table(tidy_300K$country)
+countries_over_1k <- tidy_300K %>% group_by(country) %>% mutate(Count=n())
+countries_over_1k
+```
+
+
+
+#new dataframe with count over 1k.
+```{r}
+filterdf <- countries_over_1k %>% filter(Count >1000)
+```
+
+
+
+#Shows countries with over 1000 samples
+```{r}
+table(filterdf$country)
+View(filterdf)
+small_filt <- filterdf %>% select (country,id, `Virus name`, count_N, count_S) %>%
+  mutate(S_over_N = count_S/count_N)
+```
+
+
+
+  
+#Removing NaN rows:
+
+```{r}
+small_filt <- na.omit(small_filt)
+small_filt <- small_filt[is.infinite(rowSums(small_filt)),]
+```
+
+
+
+#There are still rows with "inf"
+
+```{r}
+small_filt %>% 
+  ggplot(aes(country, S_over_N)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.15) +
+  theme(axis.text.x = element_text(angle = 45))
+?geom_boxplot()
+small_filt %>% 
+  ggplot(aes(country, S_over_N)) + 
+  geom_boxplot() + 
+  geom_jitter(width = 0.2) + 
+  theme(axis.text.x = element_text(angle = 45))
+```
+
+
+
+
+
+
+
+
+Merging gene coloumn from tidy_300k to mutation dataset:
+
+
+we want to detect the selective sweep
+we found a method for that in one of the articles - so we count the mutations for each positions and we got that around position 22.500 there are significantly more datapoints so we want to analyse that specific region and check the certain gene which might be responsible for the sweep.
+
+```{r}
+left <- tidy_300K
+right <- mutations_tidy_300K %>% select(1,5)
+merged_df <- merge(left, right)
+```
+
+```{r}
+left_join(left,right, by =c("id"="id", "position"="position"))
+```
+
+
+
+
+We want to merge the datasets so we have dates, country, GC-content.
+
+
+
+```{r}
+test_mutation_df <- mutations_tidy_300K[,]
+  
+test_tidy_df <- (tidy_300K[,c(1,10,13,31)])
+test_mutation_df <- test_mutation_df %>% group_by(id)
+test_merged_df <- left_join(test_tidy_df, test_mutation_df, by =c("id"="id"))
+test_merged_df <- test_merged_df %>% group_by(position) %>% 
+  mutate(count = n())
+```
+
+
+
+
+We now look at a specific country and gene and graph some things.
+
+```{r}
+dk_merged <- filter(test_merged_df, country == "Denmark")
+fra_merged <- filter(test_merged_df, country == "France")
+```
+
+Converting date column into numeric. Works for denmark because it has days included. but the ones in france that already have month only, will get NA.
+
+```{r}
+Date = format(as.Date(dk_merged$`Collection date`), "%Y - %m")
+Date = format(as.Date(fra_merged$`Collection date`), "%Y-%m")
+#Trying using substring
+fra_merged <- mutate(fra_merged, Date = format(substring(fra_merged$`Collection date`,0,7)))
+#Works like a charm.
+dk_merged <- dk_merged %>% mutate(Date = Date)
+```
+
+
+
+
+Looking at GC-content over time in Denmark.
+
+```{r}
+ggplot(data=dk_merged, aes(x=Date, y=dk_merged$"GC-Content")) + 
+         geom_boxplot() +
+        theme(axis.text.x=element_text(angle=90)) + ylab("GC content")
+      
+```
+GC-content over time in France.
+
+Because france has samples that are labeled on only the years, we will filter these out.
+
+Using grepl to remove the "years only" rows.
+```{r}
+remove <- c("2020,2021,2022")
+fra_merged <- fra_merged %>% grepl(remove, fra_merged$Date)
+```
+
+
+Plotting GC content for france over time.
+```{r}
+ggplot(data=fra_merged, aes(x=Date, y=fra_merged$"GC-Content")) + 
+         geom_boxplot() +
+        theme(axis.text.x=element_text(angle=90)) + ylab("GC content")
+      
+```
+
+Filter danish dataset for only one year and spike gene to see mutation positions.
+
+
+```{r}
+dk_2020 <- dk_merged %>% filter(str_detect(Date, "^2020"))
+dk_2020 %>% group_by(position) %>%
+  mutate(count = n()) %>%
+  filter(gene == "S") %>%
+  ggplot(dk_2020, mapping = aes(x=position, y=count)) + geom_point() +
+  ggtitle("Spike gene mutations during 2020 in Denmark")
+```
+
+Same for france:
+
+```{r}
+fra_merged %>% filter(str_detect(Date,"^2020")) %>% 
+  group_by(position) %>% 
+  mutate(count = n()) %>% 
+  filter(gene == "S") %>% 
+  ggplot(fra_merged, mapping = aes(x=position, y=count)) + geom_point() + 
+  ggtitle("Spike gene mutations during 2020 in France")
+```
+
+
+```{r}
+unique(tidy_300K$pangolin_lineage)
+```
+
+
+
+Mutations over time for the "5 main lineages"
+
+
+```{r}
+tidy_300K_test <- mutate(tidy_300K, Date = format(substring(tidy_300K$`Collection date`,0,7)))
+#Here we use lubridate to make the collection date column into an actual DATE.
+tidy_300K_test$`Collection date` <- ymd(tidy_300K_test$`Collection date`) 
+  
+unique(tidy_300K_test$Variant)
+  
+tidy_300K_test <- tidy_300K_fra %>% mutate(mutations = (count_N + count_S))
+interesting_lineages <- c("B.1.1.7", "P.1", "B.1","B.1.351")
+tidy_300K_test <- tidy_300K_test %>% mutate(pango_lineage = ifelse(pangolin_lineage %in% interesting_lineages, pangolin_lineage, "Other lineages"))
+tidy_300K_test %>%
+  group_by(id, mutations) %>%
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC"
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=mutations, color=Variant)) +
+  geom_point() +
+  theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 3),
+         legend.text = element_text(size = 3))+
+  ggtitle("Mutations over time for the common lineages")
+#Try and remove 2020 2021
+?nchar
+```
+
+
+GC content of the 4-5 lineages of interest over time.
+
+```{r}
+tidy_300K_test %>%
+  group_by(id) %>%
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC" 
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=`GC-Content`, color=Variant)) +
+  geom_point(size = 2) +
+  geom_smooth(aes(color=Variant), method = "lm", se = F) +
+  theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 4),
+         legend.text = element_text(size = 4)) +
+  ggtitle("GC-Content over time for the common lineages") +
+  NULL
+```
+
+
+
+Looking at France only:
+```{r}
+tidy_300K_test %>% filter(country == "France") %>% 
+  filter(str_detect(Variant, "^VOC")) %>% #This is saying the Variants only starting with "VOC" 
+  group_by(id) %>%
+  ggplot(tidy_300K_test, mapping = aes(x=`Collection date`,y=`GC-Content`, color=Variant)) +
+  geom_point() +
+  geom_boxplot() +
+  theme(axis.text.x=element_text(angle=90)) +
+  theme(legend.title = element_text(size = 3),
+         legend.text = element_text(size = 3))+
+  ggtitle("GC-Content over time for the common lineages in France")+
+  facet_wrap( ~ Variant)
+  
+```
+
+
+
+dn/ds for each lineage
+
+
+```{r}
+tidy_300K_test <- tidy_300K_test %>% mutate(DnDs = (count_N/count_S))
+tidy_300K_test %>% filter(country == "France") %>% 
+  group_by(id) %>%
+  ggplot(tidy_300K_test, mapping = aes(x=Date,y=DnDs, color=pango_lineage)) +
+  geom_point() +
+  theme(axis.text.x=element_text(angle=90)) +
+  ggtitle("DnDs ratio for the common lineages in France")+
+  facet_wrap( ~ pango_lineage)
+  
+```
+
+
+We want to find out whether the mutations are often G/C or otherwise. To do so we look at the reference genome: Wuhan1 and by using a selfwritten function, we use the mutation dataset to see where aswell as which mutation. So 1. we can see which mutations are most prone and also in which regions. We do this because we hypothesize that there are more mutations in the region for immunerecognision associated genes.
+
+
+
+
+```{r}
+x <- read_tsv("NC_045512.2.fasta")
+reference_genome <- strsplit(x$`>NC_045512.2 Severe acute respiratory syndrome coronavirus 2 isolate Wuhan-Hu-1, complete genome`[1], "") %>% unlist()
+rm(x)
+table(reference_genome) %>% knitr::kable()
+ 
+ref_genome <- tibble(base = reference_genome) %>% mutate(position=row_number())
+#do it with the frequencies of A C G T?
+```
+
+
+
+```{r}
+bases <- c("T","G","C","A")
+dk_merged <- test_merged_df %>% filter(country == "Denmark")%>% filter(variant_base %in% bases)
+#now only variant_base = A T C or G
+#Join the wuhan genome to the dk_merged:
+  
+left_dk <- dk_merged
+right_dk <- ref_genome 
+dk_merged_with_wuhan <- left_join(left_dk, right_dk, by = "position")
+```
+
+
+
+```{r}
+  
+  #Just for removing a column:
+#dk_merged_with_wuhan <- subset(dk_merged_with_wuhan, select = -newCol)
+#Adding Variants to the dk_merged_with_wuhan with merged:
+right <- tidy_300K %>% select(Variant,id)
+left <- dk_merged_with_wuhan
+dk_merged_with_wuhan <- left_join(left,right, by.x=c('id', 'Variant'), by.y=c('id', 'Variant'))
+dk_merged_with_wuhan$`Collection date` <- ymd(dk_merged_with_wuhan$`Collection date`)
+#Now we go into pyhton and load the "dk_merged_wuhan.csv"
+#We filter so variant base cannot be base either.
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% filter(variant_base != base)
+write.csv(dk_merged_with_wuhan,"dk_merged_wuhan.csv")
+dk_wuhan_statcount <- read.csv("dk_wuhan_statcount.csv")
+dk_wuhan_statcount_with_Variant <- read.csv("dk_wuhan_statcount_with_Variant.csv")
+
+```
+
+
+```{r}
+dk_wuhan_statcount 
+```
+
+
+
+Wrangling dataset with base change counts:
+
+We want to produce a plot showing the occurences of changes for each position. Which variant base is most likely to shift to. We do this to get an understanding and insight into the possibility that different regions of the genome might be under different selective pressures. Coupled with the GC-content.
+```{r}
+#Only VOC, not VOI:
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% filter(str_detect(Variant, "^VOC"))
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% filter(str_detect(Variant, "^VOC"))
+#Shortening the VOC variable names:
+unique(dk_wuhan_statcount_with_Variant$Variant)
+library(stringr)
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% mutate(variant = str_extract(dk_wuhan_statcount_with_Variant$Variant, "[^(]+"))
+#thank fucking god this works.
+dk_wuhan_statcount_with_Variant %>% group_by(position,variant) %>% 
+  ggplot(aes(x=position, y=count, fill = variant_base))+
+  geom_bar(stat="identity")
+dk_wuhan_statcount_with_Variant %>% group_by(position) %>% 
+  ggplot((aes(x=position, y=count, color=variant_base)))+
+  xlim(22300,24000)+
+  ylim(0,10)+
+  geom_point() +
+  ggtitle("counts of limited mutations for each VOC in range of 22300-24000")+
+  facet_wrap(~ variant)
+```
+
+
+A plot showing all the positions without a mutation: for all different VOC. they show the same pattern?
+
+```{r}
+with_mutation <- dk_wuhan_statcount_with_Variant %>% filter(between(position, 21500,22150))# %>% group_by(variant, position)
+
+with <-with_mutation$position
+
+
+total <- 21500:22150
+
+
+without<-setdiff(total,with)
+
+total<-data.frame(total)
+
+non <- c('NON')
+nonn<-data.frame(without,non)
+
+mut<-c('MUT')
+mutt<-data.frame(with,mut)
+
+colnames(nonn) <- c("position","non_mut")
+colnames(mutt)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+non_vs_mutated <- merge(x = total, y = mutt, by = "position", all = TRUE)
+non_vs_mutated2<- merge(x=non_vs_mutated, y=nonn, by ="position", all=TRUE)
+
+non_vs_mutated_plot<-unite(non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+```
+
+
+```{r}
+library(ggpubr)
+library(patchwork)
+
+ggplot(non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,1.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation", subtitle= "13 420 mutated, 21 002 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+```{r}
+#position for S1:
+NTD <- -(21576 - 21867)
+RBD <- -(21882 - 22104)
+
+NTD<-non_vs_mutated_plot%>%filter(between(position,21576,21867))
+
+
+ggplot(NTD, aes(x=position)) +
+    geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+  scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="N terminal domain mutation vs non mutation", subtitle= "196 mutated, 185 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+```{r}
+
+RBD<-non_vs_mutated_plot%>%filter(between(position,21882,22104))
+
+  
+
+ggplot(RBD, aes(x=position)) +
+    geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+  scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Receptor binding domain mutation vs non mutation", subtitle= "120 mutated, 145 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+
+Averaging over spike to see how mutated are NTD and RBD
+
+a) avg 21 500 - 21 870 
+   avg 21 870 - 22150
+   
+   over all the spike and splitting at the "border" of ntd-rbd
+
+b) avg 21 576- 21 867
+   avg 21 882 - 22 104
+   
+```{r}
+count_NTD<-non_vs_mutated_plot%>%filter(between(position,21576,21867))
+count_NTD<- count(count_NTD, nonmut)
+
+count_RBD <-non_vs_mutated_plot%>%filter(between(position,21882,22104))
+count_RBD<-count(count_RBD,nonmut)
+```
+
+
+```{r}
+total_with <-dk_wuhan_statcount_with_Variant $position
+
+
+total_total <- 0:30000
+
+without2<-setdiff(total_total,total_with)
+
+total_total<-data.frame(total_total)
+
+tnon <- c('NON')
+tnonn<-data.frame(without2,tnon)
+
+tmut<-c('MUT')
+tmutt<-data.frame(total_with,tmut)
+
+colnames(tnonn) <- c("position","non_mut")
+colnames(tmutt)<- c("position","non_mut")
+colnames(total_total)<-c("position")
+
+total_non_vs_mutated <- merge(x = total_total, y = tmutt, by = "position", all = TRUE)
+total_non_vs_mutated2<- merge(x=total_non_vs_mutated, y=tnonn, by ="position", all=TRUE)
+
+total_non_vs_mutated_plot<-unite(total_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+count_total_shit<- count(total_non_vs_mutated_plot, nonmut)
+
+```
+
+
+
+Frequency table:
+
+```{r}
+#For removing changes that are the same: A--> A. etc.
+dk_wuhan_statcount_with_Variant <- dk_wuhan_statcount_with_Variant %>% filter(variant_base != base)
+dk_wuhan_statcount_with_Variant$Pairs <- paste(dk_wuhan_statcount_with_Variant$base, dk_wuhan_statcount_with_Variant$variant_base)
+unique(dk_wuhan_statcount_with_Variant$Pairs)
+    
+frequencies_with_Variant <- dk_wuhan_statcount_with_Variant %>% group_by(Pairs,variant) %>% summarise(Percentage=(sum(count)/sum(dk_wuhan_statcount_with_Variant$count)),sum(count))
+sum(dk_wuhan_statcount_with_Variant$count)
+sum(frequencies_with_Variant$Percentage)
+sum(frequencies_with_Variant$`sum(count)`)
+```
+
+Frequency plots: one for the general tendency and then for some specific regions:
+
+
+```{r}
+#Count plot for each change over the whole genome:
+sum(frequencies_with_Variant$`sum(count)`)
+#171533
+ggplot(frequencies_with_Variant, aes(x=Pairs,y=frequencies_with_Variant$`sum(count)`,color=variant))+
+         geom_point()+
+  theme(axis.text.x=element_text(angle=90)) +
+  ggtitle("Counts of changes over the whole genome")
+```
+
+```{r}
+#Count plot for each change in the 22500- 24000 region:
+#there are 6256 counted positions for the range(21500,22150)
+frequencies_in_range <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(Percentage=(sum(count)/sum(dk_wuhan_statcount_with_Variant$count)),sum(count))
+ggplot(frequencies_in_range,aes(x=Pairs,y=frequencies_in_range$`sum(count)`, color=variant))+
+  geom_point()+theme(axis.text.x=element_text(angle=90)) +
+  ylim(0,10)+
+  geom_jitter()+
+  ggtitle("Counts of small changes in range 21500 - 22150 for all VOC")
+  
+```
+
+
+
+Short variant names for dk_merged_with_wuhan so we can make a GC graph for all VOCs
+```{r}
+dk_merged_with_wuhan <- dk_merged_with_wuhan %>% mutate(variant = str_extract(dk_merged_with_wuhan$Variant, "[^(]+"))
+dk_merged_with_wuhan %>%
+ggplot(dk_merged_with_wuhan, mapping= aes(x=dk_merged_with_wuhan$`Collection date`,y=dk_merged_with_wuhan$`GC-Content`, color=Variant)) +
+  geom_point() +
+  geom_smooth(aes(color=variant), method = "lm", se = F) +
+  ggtitle("GC-content of Variants of concern in Denmark")
+```
+
+
+
+
+Adding aa_change to statcount aswell:
+```{r}
+#Going into python environment and adding the column aswell:
+```
+
+
+
+L452R over timeline:
+
+```{r}
+dk_wuhan_statcount_with_Variant_Collectiondate <- read.csv("dk_wuhan_statcount_with_Variant_and_collection_date.csv")
+#adding variant short:
+#Filtering only for VOC:
+dk_wuhan_statcount_with_Variant_Collectiondate <- dk_wuhan_statcount_with_Variant_Collectiondate %>% filter(str_detect(Variant, "^VOC"))
+#making variant column
+dk_wuhan_statcount_with_Variant_Collectiondate <- dk_wuhan_statcount_with_Variant_Collectiondate %>% mutate(variant = str_extract(dk_wuhan_statcount_with_Variant_Collectiondate$Variant, "[^(]+"))
+#lubridate the date
+dk_wuhan_statcount_with_Variant_Collectiondate$Collection.date <- ymd(dk_wuhan_statcount_with_Variant_Collectiondate$Collection.date)
+dk_wuhan_statcount_with_Variant_Collectiondate %>% filter(aa_change == "L452R") %>%   ggplot(aes(x=Collection.date,y = count, color=variant))+
+  geom_point() +
+  ggtitle("Number of mutations that cause the L452R change")
+```
+
+
+Where is the spike gene:
+
+We expect to see 
+
+
+
+
+
+
+```{r}
+#NTD
+21563+13
+21563+304
+#RBD
+21563+319
+21563+541
+unique(dk_merged_with_wuhan$effect)
+syn <- "synonymous_variant"
+#dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn"))
+test <- dk_merged_with_wuhan %>% group_by(variant, position) %>% summarise(n=n()) %>% mutate(counts = n)
+dk_merged_with_wuhan %>% summarise(n=n())
+dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn")) %>% filter(gene=="S") %>% filter(between(position, 21500,22150)) %>% group_by(variant, position, Type) %>% summarise(n=n()) %>% filter(n <= 5) %>% 
+ggplot()+
+  geom_point(aes(x=position, y=n,color = Type))+
+  facet_wrap(~ variant)+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+```
+
+Maybe a plot showing the above, but with all the overlaps, all the low frequency mutations that are present in all the variants.
+
+
+```{r}
+#HAVENT RERUN THIS YET WITH fixed filter.
+test <- dk_merged_with_wuhan %>% filter(gene=="S") %>% filter(between(position,21500,22150)) %>% group_by(position,variant) %>% summarise(n=n())
+  
+test
+write.csv(test,"forlooped test.csv")
+Mutation_overlap <- read.csv("mutation_overlap.csv")
+dk_merged_with_wuhan %>% mutate(Type = ifelse(effect %in% syn, effect, "Non-syn")) %>% filter(gene=="S") %>% filter(between(position, 21500,22150)) %>% group_by(variant, position, Type) %>% summarise(n=n()) %>% filter(n <= 5)
+#
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5)
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5) %>% 
+  ggplot(aes(x=position, y=n,color = variant))+
+  geom_point()+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+par(mfrow = c(1,2))
+Mutation_overlap %>% filter(between(position, 21500,22150)) %>% group_by(variant, position) %>% filter(n <= 5) %>% 
+  ggplot(aes(x=position, y=n,color = mutation_overlap))+
+  geom_point()+
+    ggtitle("Low frequency mutations on the NTD & RBD regions")
+```
+
+
+
+test hvordan group by virker: DET GØR DET SÅDAN HER BRO
+```{r}
+dk_wuhan_statcount_with_Variant_Collectiondate %>% group_by(position,variant,aa_change,base,variant_base) %>% summarise(k=n()) %>% 
+  ggplot((aes(x=position, y=k, color=variant_base)))+
+  xlim(22300,24000)+
+  ylim(0,10)+
+  geom_point() +
+  ggtitle("counts of limited mutations for each VOC in range of 22300-24000")+
+  facet_wrap(~ variant)
+```
+
+
+
+
+Contingency tables:
+
+We hypothesize that variants might have different selective pressures --> especially on the region of the Spike gene, that is associated with human immunoresponse. Therefore we look at the number of mutations for all available variants in denmark on this position of the genome. They might differ in which basepair mutations are happening (cg depletion at different levels?). However we have to remember that there are alot less counts for some of the variants.
+
+```{r}
+#Contingency tables: COunt and percentage
+df_count_pairs_each_VOC <- dk_wuhan_statcount_with_Variant %>% filter(between(position, 21500,22150)) %>% group_by(Pairs,variant) %>% 
+summarise(n=(sum(count)))
+contingency_count <- df_count_pairs_each_VOC %>% spread(Pairs,n)
+#If we remove the spread argument, we can look at the df: df_count_pairs_each_VOC$n and sum it. 6256 it will be.
+sum(df_count_pairs_each_VOC$n)
+df_percentage_pairs_each_VOC <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% 
+summarise(n=(sum(count)/sum(df_count_pairs_each_VOC$n)))
+#n sums to 1. perfect
+contingency_percentage <- df_percentage_pairs_each_VOC %>% spread(Pairs,n)
+#turn NA's into 0.
+test <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(n=(sum(count)/sum(df_count_pairs_each_VOC$n))) %>% spread(Pairs,n)
+test2 <- dk_wuhan_statcount_with_Variant %>% filter(between(position,21500,22150)) %>% group_by(Pairs,variant) %>% summarise(n=(sum(count))) %>% spread(Pairs,n)
+test2
+test[is.na(test)]=0
+test2[is.na(test2)]=0
+#Sum of all the percentages. 
+sum(rowSums(test[,-1]))
+sum(rowSums(test2[,-1]))
+#Sum of all the percentages without beta:
+sum(rowSums(test[,-(c(1,2))]))
+#0,999, which means that beta doesnt really contribute to anything.
+#Lets remove beta: 
+test <- test[-2,]
+#The percentages in our contingency table. are equivalent to the number of mutations in the total filtered data. THerefore all the numbers added together sum to 1. I think this is what we want.
+```
+
+
+Further doing statistics on the contingency tables:
+With chi squared test: Check if column variables are independent of row variables.
+```{r}
+AC <- chisq.test(test$variant,test$`A C`)
+#So counts and percentage contingency tables give same results.
+```
+Since our p-value is not of significance, we know that A --> C mutations are not independent between Variants.
+
+
+
+
+
+Contingency tables with only filtered for 5 or less counts, for only DK and for all of the world.
+```{r}
+dk_merged_with_wuhan$Pairs <- paste(dk_merged_with_wuhan$base, dk_merged_with_wuhan$variant_base)
+#Nearly no counts
+dk_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n <= 5) %>% spread(Pairs,n)
+#Not that many samples_: Maybe do it for the whole of world and see.
+all_merged <- test_merged_df %>% filter(variant_base == bases)
+#now only variant_base = A T C or G
+#Join the wuhan genome to the all_merged:
+left <- all_merged
+right <- ref_genome 
+all_merged_with_wuhan <- left_join(left, right, by = "position")
+#Adding variant:
+right <- tidy_300K %>% select(Variant,id)
+left <- all_merged_with_wuhan
+all_merged_with_wuhan <- left_join(left,right, by = "id")
+#Filtering for only VOC's
+all_merged_with_wuhan <- all_merged_with_wuhan %>% filter(str_detect(Variant, "^VOC"))
+#Shortening the VOC variable names and filtering for ref_base only A|T|C|G
+library(stringr)
+all_merged_with_wuhan <- all_merged_with_wuhan %>% mutate(variant = str_extract(all_merged_with_wuhan$Variant, "[^(]+")) %>% filter(ref_base == c("A","C","G","T"))
+all_merged_with_wuhan$Pairs <- paste(all_merged_with_wuhan$base, all_merged_with_wuhan$variant_base)
+#THIS IS WRONG
+#Contingency table for all countries, all mutations.
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% spread(Pairs, n)
+#THIS IS WRONG
+#Contingency table for all countries, only limited mutations (NEW ONES).
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs) %>% summarise(n=n()) %>% filter(n < 5) %>%  spread(Pairs,n)
+#WE OBSERVE VERY LITTLE THAT ARE ONLY FOUND UNDER 5 TIMES, SINCE WEHAVE ALOT MORE DATA, AND THESEMUTATIONS HAVE OCCURED EVERYWHERE IN THIS SAMPLES.
+#NEW PROBLEM: SOLVED
+test <- all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n<= 5)
+test
+#Aggregate unique positions for Pairs and variants.
+contingency_table_aggregated <- aggregate(n~ Pairs+variant, data= test,FUN=sum)
+contingency_table_aggregated
+#ALso quickly check how many mutations there are on RBD and NTD.
+contingency_table_aggregated %>% spread(Pairs,n)
+```
+
+
+Comparing the contingency table with the whole genome for limited counts of mutations:
+```{r}
+all_merged_with_wuhan %>% filter(between(position,21500,22150)) %>% group_by(variant, Pairs,position) %>% summarise(n=n()) %>% filter(n <= 5) %>% aggregate(n ~ Pairs + variant,FUN = sum) %>% spread(Pairs,n)
+```
+
+```{r}
+myData = read.delim("Clean dataset.txt",sep=",", header = TRUE)
+print(myData)
+```
+
+
+```{r}
+filtered <- myData %>% filter(between(position, 21500,22150))
+filtered
+```
+After filtering for the SPIKE, we divide the variants to the 5 VOC we are interested in
+now we have the spike mutations for each variant
+```{r}
+rand_df <- filtered[sample(nrow(filtered), size=1000),]
+rand_df
+```
+
+```{r}
+alpha  <- filtered %>% filter(grepl('Alpha', Variant))
+alpha <- alpha[sample(nrow(alpha), size=1000),]
+
+beta <-filtered %>% filter(grepl('Beta', Variant))
+beta <- beta[sample(nrow(beta), size=1000),]
+
+delta<-filtered %>% filter(grepl('Delta', Variant))
+delta <- delta[sample(nrow(delta), size=1000),]
+
+omicron<-filtered %>% filter(grepl('Omicron', Variant))
+omicron <- omicron[sample(nrow(omicron), size=1000),]
+
+gamma<-filtered %>% filter(grepl('Gamma', Variant))
+gamma <- gamma[sample(nrow(gamma), size=1000),]
+```
+
+A plot showing all the positions without a mutation: for all different VOC. they show the same pattern?
+
+1. starting with Alpha
+```{r}
+
+a_with <-data.frame(alpha$position)
+colnames(a_with)<-c("position")
+
+total <- 21500:22150
+
+
+a_without<-setdiff(total,a_with)
+data.frame(a_without)
+
+total<-data.frame(total)
+
+non <- c('NON')
+a_non<-data.frame(a_without,non)
+a_non
+a_mut<-c('MUT')
+a_mut<-data.frame(a_with,mut)
+
+colnames(a_non) <- c("position","non_mut")
+colnames(a_mut)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+alpha_non_vs_mutated <- merge(x = total, y = a_mut, by = "position", all = TRUE)
+alpha_non_vs_mutated2<- merge(x=alpha_non_vs_mutated, y=a_non, by ="position", all=TRUE)
+
+alpha_non_vs_mutated_plot<-unite(alpha_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+alpha_non_vs_mutated_plot<-alpha_non_vs_mutated_plot[!duplicated(alpha_non_vs_mutated_plot$position), ]
+count(alpha_non_vs_mutated_plot,nonmut)
+```
+
+
+```{r}
+library(ggpubr)
+library(patchwork)
+
+ggplot(alpha_non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation in Alpha variant", subtitle= "177 mutated, 474 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+```
+2. Here comes Beta
+
+```{r}
+b_with <-data.frame(beta$position)
+colnames(b_with)<-c("position")
+
+total <- 21500:22150
+total<-data.frame(total)
+colnames(total)<-c("position")
+
+b_without<-setdiff(total,b_with)
+data.frame(b_without)
+
+
+non <- c('NON')
+b_non<-data.frame(b_without,non)
+b_non
+b_mut<-c('MUT')
+b_mut<-data.frame(b_with,mut)
+
+colnames(b_non) <- c("position","non_mut")
+colnames(b_mut)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+beta_non_vs_mutated <- merge(x = total, y = b_mut, by = "position", all = TRUE)
+beta_non_vs_mutated2<- merge(x=beta_non_vs_mutated, y=b_non, by ="position", all=TRUE)
+
+beta_non_vs_mutated_plot<-unite(beta_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+beta_non_vs_mutated_plot<-beta_non_vs_mutated_plot[!duplicated(beta_non_vs_mutated_plot$position), ]
+count(beta_non_vs_mutated_plot,nonmut)
+```
+```{r}
+ggplot(beta_non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation in Beta variant", subtitle= "82 mutated, 569 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+```
+3. lets go with delta
+```{r}
+d_with <-data.frame(delta$position)
+colnames(d_with)<-c("position")
+
+total <- 21500:22150
+total<-data.frame(total)
+colnames(total)<-c("position")
+
+d_without<-setdiff(total,d_with)
+data.frame(d_without)
+
+
+non <- c('NON')
+d_non<-data.frame(d_without,non)
+d_non
+d_mut<-c('MUT')
+d_mut<-data.frame(d_with,mut)
+
+colnames(d_non) <- c("position","non_mut")
+colnames(d_mut)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+delta_non_vs_mutated <- merge(x = total, y = d_mut, by = "position", all = TRUE)
+delta_non_vs_mutated2<- merge(x=delta_non_vs_mutated, y=d_non, by ="position", all=TRUE)
+
+delta_non_vs_mutated_plot<-unite(delta_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+delta_non_vs_mutated_plot<-delta_non_vs_mutated_plot[!duplicated(delta_non_vs_mutated_plot$position), ]
+count(delta_non_vs_mutated_plot,nonmut)
+```
+
+```{r}
+ggplot(delta_non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation in Delta variant", subtitle= "559 mutated, 92 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+4. omicron it is
+```{r}
+o_with <-data.frame(omicron$position)
+colnames(o_with)<-c("position")
+
+total <- 21500:22150
+total<-data.frame(total)
+colnames(total)<-c("position")
+
+o_without<-setdiff(total,o_with)
+data.frame(o_without)
+
+
+non <- c('NON')
+o_non<-data.frame(o_without,non)
+o_non
+o_mut<-c('MUT')
+o_mut<-data.frame(o_with,mut)
+
+colnames(o_non) <- c("position","non_mut")
+colnames(o_mut)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+omicron_non_vs_mutated <- merge(x = total, y = o_mut, by = "position", all = TRUE)
+omicron_non_vs_mutated2<- merge(x=omicron_non_vs_mutated, y=o_non, by ="position", all=TRUE)
+
+omicron_non_vs_mutated_plot<-unite(omicron_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+omicron_non_vs_mutated_plot<-omicron_non_vs_mutated_plot[!duplicated(omicron_non_vs_mutated_plot$position), ]
+count(omicron_non_vs_mutated_plot,nonmut)
+```
+```{r}
+ggplot(omicron_non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation in Omicron variant", subtitle= "507 mutated, 144 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+```{r}
+g_with <-data.frame(gamma$position)
+colnames(g_with)<-c("position")
+
+total <- 21500:22150
+total<-data.frame(total)
+colnames(total)<-c("position")
+
+g_without<-setdiff(total,g_with)
+data.frame(g_without)
+
+
+non <- c('NON')
+g_non<-data.frame(g_without,non)
+g_non
+g_mut<-c('MUT')
+g_mut<-data.frame(g_with,mut)
+
+colnames(g_non) <- c("position","non_mut")
+colnames(g_mut)<- c("position","non_mut")
+colnames(total)<-c("position")
+
+gamma_non_vs_mutated <- merge(x = total, y = g_mut, by = "position", all = TRUE)
+gamma_non_vs_mutated2<- merge(x=gamma_non_vs_mutated, y=g_non, by ="position", all=TRUE)
+
+gamma_non_vs_mutated_plot<-unite(gamma_non_vs_mutated2, nonmut, c(non_mut.x, non_mut.y))
+
+gamma_non_vs_mutated_plot<-gamma_non_vs_mutated_plot[!duplicated(gamma_non_vs_mutated_plot$position), ]
+count(gamma_non_vs_mutated_plot,nonmut)
+
+```
+```{r}
+ggplot(gamma_non_vs_mutated_plot, aes(x=position)) +
+  geom_rect(aes(fill=nonmut, xmin=position-0.5, xmax=position+0.5),
+    ymin=-0.1, ymax=0.1, show.legend = TRUE) +
+  ylim(-0.5,0.5) + theme_void() +
+   scale_fill_manual(name="Mutated vs not mutated positions",labels=c("mutated", "not mutated"), values=c('brown1', 'forestgreen')) +
+  labs(title="Spike gene mutation vs non mutation in Gamma variant", subtitle= "176 mutated, 475 not mutated positions")+
+ theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
